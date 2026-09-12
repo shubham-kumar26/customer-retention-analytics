@@ -1,10 +1,12 @@
 # Customer Retention & Lifetime Value Analytics
-### Multi-Table SQL Analysis, API-Enriched Market Benchmarking, and ML-Based Repeat-Purchase Prediction
+### Multi-Table SQL Analysis, API-Enriched Market Benchmarking, ML-Based Repeat-Purchase Prediction, and a GenAI Insight Layer
 
 [![Live Dashboard](https://img.shields.io/badge/Power%20BI-Live%20Dashboard-yellow)](https://app.powerbi.com/links/62Xf3089Xr?ctid=bc5b2879-3fac-469a-b8c4-994705bc09d7&pbi_source=linkShare)
 ![Python](https://img.shields.io/badge/Python-3.13-blue)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-blue)
 ![scikit--learn](https://img.shields.io/badge/scikit--learn-ML-orange)
+![Gemini API](https://img.shields.io/badge/Gemini-GenAI-purple)
+![Gradio](https://img.shields.io/badge/Gradio-UI-green)
 
 ---
 
@@ -13,6 +15,8 @@
 E-commerce businesses live or die on repeat customers — acquiring a new customer is far more expensive than keeping an existing one. This project analyzes ~100,000 real Brazilian e-commerce orders to answer a deceptively simple question: **who comes back, and why?**
 
 The honest answer this data gives is not what a typical "churn prediction" project expects. Rather than force-fitting a subscription-style churn narrative onto the data, this project follows the evidence: it turns out **97% of customers in this marketplace only ever order once**. That single finding reshapes the entire analysis — from a "predict who will leave" problem into a "predict who will ever come back, and what makes them different" problem, which is a more honest and arguably more useful question for this kind of business.
+
+The project doesn't stop at prediction, either — a model's output (a probability, a list of feature importances) isn't useful to a marketing or customer-success team on its own. The final layer of this project addresses that: a GenAI-powered interface that turns a raw prediction into a plain-English, actionable recommendation.
 
 **→ [Explore the live interactive dashboard](https://app.powerbi.com/links/62Xf3089Xr?ctid=bc5b2879-3fac-469a-b8c4-994705bc09d7&pbi_source=linkShare)**
 
@@ -28,9 +32,10 @@ The honest answer this data gives is not what a typical "churn prediction" proje
 6. [Repeat-Purchase Prediction Model](#4-repeat-purchase-prediction-model)
 7. [Customer Segmentation & A/B Test Simulation](#5-customer-segmentation--ab-test-simulation)
 8. [Dashboard](#6-dashboard)
-9. [Key Takeaways](#key-takeaways)
-10. [Limitations & Future Improvements](#limitations--future-improvements)
-11. [Repository Structure](#repository-structure)
+9. [GenAI Customer Insight Generator](#7-genai-customer-insight-generator)
+10. [Key Takeaways](#key-takeaways)
+11. [Limitations & Future Improvements](#limitations--future-improvements)
+12. [Repository Structure](#repository-structure)
 
 ---
 
@@ -47,6 +52,7 @@ A real, anonymized relational dataset spanning 2016–2018, split across 9 linke
 | Data storage & querying | PostgreSQL 18 |
 | Data manipulation & ML | Python (Pandas, NumPy, scikit-learn, XGBoost) |
 | External data integration | REST API (DummyJSON) via `requests` |
+| GenAI / Natural Language Insights | Google Gemini API, Gradio |
 | Visualization | Matplotlib, Seaborn, Power BI |
 
 ---
@@ -148,19 +154,52 @@ A three-page Power BI dashboard translates the analysis into a business-facing v
 
 ---
 
+## 7. GenAI Customer Insight Generator
+
+Section 4's model outputs a probability and a feature-importance table — genuinely useful to a data scientist, but not directly actionable for a marketing or customer-success team deciding what to do about a specific at-risk customer. This extension closes that gap: it takes a real customer's data, runs it through the trained Random Forest model, and uses Gemini to turn the prediction into a plain-English, decision-ready recommendation.
+
+**How it works:**
+1. A user enters a real `customer_unique_id`
+2. The system queries the live PostgreSQL database for that customer's actual order, payment, and review history — the same feature set used in Section 4's model (`total_spent`, `avg_order_value`, `avg_review_score`, `avg_delivery_delay`, `payment_type_encoded`, `avg_installments`)
+3. The trained Random Forest model predicts whether this customer is likely to be a repeat buyer or a one-time buyer
+4. The prediction, along with the model's top contributing features for this specific customer, is sent to the Gemini API
+5. Gemini returns a short, plain-English explanation of the prediction and a concrete recommended action — written for a non-technical stakeholder, without ML jargon like "feature importance" or "probability"
+
+**Demo:**
+
+![Customer ID entered, with the resulting plain-English insight and recommendation](./genai_insight_demo.png)
+
+*Example: querying a real customer who made a single $141.90 purchase correctly identifies them as an at-risk one-time buyer and recommends a targeted follow-up offer — consistent with Section 5's finding that high-value, one-time customers are the group most worth targeting with retention offers.*
+
+**Design decisions worth noting:**
+- **Grounded in the real model, not a mock:** this doesn't re-implement or approximate the prediction — it loads the actual `RandomForestClassifier` trained in Section 4 and queries the live database for real feature values, so the insight is only as good (and only as honest) as the underlying model.
+- **Written for the reader, not the analyst:** the prompt explicitly instructs the model to avoid ML terminology, since the intended audience is a marketing or customer-success stakeholder, not a data scientist.
+- **A different pattern from a text-to-SQL interface:** rather than letting a user query the database freely, this tool answers one specific, high-value question — "should we do something about this customer, and what?" — end to end.
+
+**Running it locally:**
+```bash
+pip install google-genai gradio sqlalchemy psycopg2-binary pandas joblib python-dotenv
+
+# .env file needed:
+# GEMINI_API_KEY=your_key_here
+# DB_PASSWORD=your_postgres_password
+
+python genai_insight_generator.py
+```
+This opens a local Gradio interface at `http://127.0.0.1:7860`.
+
+*Note: this runs on Gemini's free API tier, which has a daily request quota. A production deployment would move to a paid tier for higher limits.*
+
+---
+
 ## Key Takeaways
 
 - **The single most important finding shaped the whole project**: 97% of customers are naturally one-time buyers in this marketplace, which meant abandoning a standard cohort-retention approach in favor of a repeat-vs-one-time framing — a real example of letting the data redirect the analysis rather than forcing a predetermined technique onto it.
 - **Spend behavior dominates repeat-purchase prediction** (87% of feature importance combined), while service-quality signals (reviews, delivery speed) are real but secondary — confirmed independently by both SQL exploration and the model's own logic.
 - **Lifetime value and loyalty are not the same thing**: the single highest-spending customer was a one-time buyer, not a repeat customer — a distinction that matters for how a business should treat "high value" customers differently from "loyal" ones.
 - **Model selection was a genuine tradeoff, not a clear winner**: Random Forest and XGBoost performed within a few points of each other, requiring an actual business judgment call (precision vs. recall) rather than simply picking the highest number.
+- **A prediction is only useful if someone can act on it**: the GenAI layer doesn't change the analysis, it closes the last-mile gap between a model's output and a stakeholder's next action.
 
-## Limitations & Future Improvements
-
-- The API-based market benchmark uses a small sample and mismatched currency — a production version needs a larger, currency-normalized price comparison
-- The A/B test is simulated, not observed — a real experiment would need actual campaign data
-- Category-level repeat-rate analysis could be extended into a full RFM (Recency/Frequency/Monetary) segmentation for finer-grained targeting
-- Threshold-tuning XGBoost could potentially match Random Forest's precision while retaining its higher recall
 
 ## Repository Structure
 
@@ -170,12 +209,15 @@ customer-retention-analytics/
 ├── eda_churn.py                   # Python EDA + chart generation
 ├── scrape_prices.py               # API integration for market price benchmarking
 ├── model_churn.py                 # Feature engineering, modeling, segmentation, A/B test
+├── genai_insight_generator.py     # GenAI customer insight generator (Gemini + Gradio)
+├── repeat_customer_model.pkl      # Saved trained Random Forest model
 ├── competitor_prices.csv          # Output of the API price pull
 ├── orders_distribution.png        # EDA chart
 ├── spend_distribution.png         # EDA chart
 ├── PAGE1.PNG                      # Dashboard screenshot
 ├── PAGE2.PNG                      # Dashboard screenshot
 ├── PAGE3.PNG                      # Dashboard screenshot
+├── genai_insight_demo.png         # GenAI feature demo screenshot
 └── README.md
 ```
 
