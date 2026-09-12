@@ -167,7 +167,7 @@ Section 4's model outputs a probability and a feature-importance table — genui
 
 **Demo:**
 
-![Customer ID entered, with the resulting plain-English insight and recommendation](./genaiinsight.png)
+![Customer ID entered, with the resulting plain-English insight and recommendation](./demo.png)
 
 *Example: querying a real customer who made a single $141.90 purchase correctly identifies them as an at-risk one-time buyer and recommends a targeted follow-up offer — consistent with Section 5's finding that high-value, one-time customers are the group most worth targeting with retention offers.*
 
